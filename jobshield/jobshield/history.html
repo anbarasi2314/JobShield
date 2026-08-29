@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Analysis History — JobShield</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><path fill=%22%2333D6C0%22 d=%22M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z%22/></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="navbar">
+  <div class="container">
+    <a href="index.html" class="brand"><span class="brand-mark" data-icon="shield" data-icon-size="26"></span>JobShield</a>
+    <nav class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="about.html">About</a>
+      <a href="safety-tips.html">Safety Tips</a>
+    </nav>
+    <div class="nav-right">
+      <button class="nav-toggle" aria-label="Open menu" aria-expanded="false"></button>
+    </div>
+  </div>
+</header>
+
+<div class="mobile-menu">
+  <a href="index.html">Home</a>
+  <a href="how-it-works.html">How It Works</a>
+  <a href="about.html">About</a>
+  <a href="safety-tips.html">Safety Tips</a>
+</div>
+
+<main>
+  <div class="page-head">
+    <div class="container">
+      <span class="eyebrow">Your record</span>
+      <h1>My Analysis History</h1>
+      <p>Every offer you've checked, saved on this device so you can revisit it anytime.</p>
+    </div>
+  </div>
+
+  <div class="section-tight">
+    <div class="container">
+
+      <div class="history-toolbar">
+        <div class="filter-chips">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="low">Low Risk</button>
+          <button class="chip" data-filter="medium">Medium Risk</button>
+          <button class="chip" data-filter="high">High Risk</button>
+        </div>
+        <button class="btn btn-secondary" id="clear-history-btn"><span data-icon="trash" data-icon-size="15"></span>Clear History</button>
+      </div>
+
+      <div class="card" style="overflow:hidden;">
+        <table class="history-table">
+          <thead>
+            <tr><th>Job</th><th>Date</th><th>Risk</th><th>Score</th><th></th></tr>
+          </thead>
+          <tbody id="history-body"><!-- injected --></tbody>
+        </table>
+      </div>
+
+      <div class="history-empty card" id="history-empty">
+        <div data-icon="history" data-icon-size="46"></div>
+        <h3>No analyses yet</h3>
+        <p>Once you analyze a job or internship offer, it'll show up here.</p>
+        <a href="analyze.html" class="btn btn-primary">Analyze a Job <span data-icon="arrowRight" data-icon-size="16"></span></a>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <span>© 2026 JobShield</span>
+      <span>History is stored locally in your browser only.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="js/ui.js"></script>
+<script src="js/engine.js"></script>
+<script>
+(() => {
+  const body = document.getElementById('history-body');
+  const emptyState = document.getElementById('history-empty');
+  const tableCard = document.querySelector('.history-table').closest('.card');
+  const toolbar = document.querySelector('.history-toolbar');
+  let activeFilter = 'all';
+
+  function toneOf(level) {
+    if (/high/i.test(level)) return 'high';
+    if (/elevated/i.test(level)) return 'elevated';
+    if (/medium/i.test(level)) return 'medium';
+    return 'low';
+  }
+
+  function render() {
+    const all = JobShieldHistory.all();
+    const items = activeFilter === 'all' ? all : all.filter(i => toneOf(i.level) === activeFilter || (activeFilter === 'high' && toneOf(i.level) === 'elevated'));
+
+    if (!all.length) {
+      tableCard.style.display = 'none';
+      toolbar.style.display = 'none';
+      emptyState.classList.add('show');
+      return;
+    }
+    tableCard.style.display = '';
+    toolbar.style.display = '';
+    emptyState.classList.remove('show');
+
+    if (!items.length) {
+      body.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-faint);padding:32px;">No analyses match this filter.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = items.map(item => {
+      const tone = toneOf(item.level);
+      const emoji = { high: '⚠', elevated: '⚠', medium: '!', low: '✓' }[tone];
+      const dateStr = new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      return `
+      <tr>
+        <td class="history-row-job"><strong>${item.jobTitle}</strong>${item.company ? `<span>${item.company}</span>` : ''}</td>
+        <td>${dateStr}</td>
+        <td><span class="risk-badge ${tone}"><span class="dot"></span>${item.level}</span></td>
+        <td style="font-family:var(--font-mono);font-weight:700;">${item.score}/100</td>
+        <td style="text-align:right;"><a href="analyze.html" style="color:var(--accent);font-size:13.5px;font-weight:600;">View Analysis →</a></td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      activeFilter = chip.dataset.filter;
+      render();
+    });
+  });
+
+  document.getElementById('clear-history-btn').addEventListener('click', () => {
+    if (confirm('Clear all saved analysis history on this device?')) {
+      JobShieldHistory.clear();
+      render();
+      showToast('History cleared');
+    }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

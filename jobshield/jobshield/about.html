@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About — JobShield</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><path fill=%22%2333D6C0%22 d=%22M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z%22/></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="navbar">
+  <div class="container">
+    <a href="index.html" class="brand"><span class="brand-mark" data-icon="shield" data-icon-size="26"></span>JobShield</a>
+    <nav class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="about.html" class="active">About</a>
+      <a href="safety-tips.html">Safety Tips</a>
+    </nav>
+    <div class="nav-right">
+      <button class="nav-toggle" aria-label="Open menu" aria-expanded="false"></button>
+    </div>
+  </div>
+</header>
+
+<div class="mobile-menu">
+  <a href="index.html">Home</a>
+  <a href="how-it-works.html">How It Works</a>
+  <a href="about.html">About</a>
+  <a href="safety-tips.html">Safety Tips</a>
+</div>
+
+<main>
+  <div class="page-head">
+    <div class="container">
+      <span class="eyebrow">About</span>
+      <h1>What is JobShield?</h1>
+      <p>JobShield is an AI-assisted job safety analysis platform designed to help students and job seekers identify potentially suspicious job and internship offers.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="container" style="max-width:820px;">
+      <div class="card" style="padding:8px 32px;">
+
+        <div class="pillar-row">
+          <span class="label">PROBLEM</span>
+          <div>
+            <h3>Job seekers increasingly encounter misleading offers</h3>
+            <p>Students, fresh graduates, and first-time applicants are frequent targets for fraudulent job and internship postings — often because they're less familiar with what a normal hiring process looks like, and under pressure to land something quickly.</p>
+          </div>
+        </div>
+
+        <div class="pillar-row">
+          <span class="label">SOLUTION</span>
+          <div>
+            <h3>Analyze offers before you act on them</h3>
+            <p>JobShield takes a job description, a posting URL, or a screenshot, checks it against common scam indicators — payment requests, unrealistic salary, urgency tactics, missing company details, and more — and returns an explained, indicator-based risk score instead of a blunt "scam / not scam" verdict.</p>
+          </div>
+        </div>
+
+        <div class="pillar-row">
+          <span class="label">TECHNOLOGY</span>
+          <div>
+            <h3>Simple, transparent, and built to grow</h3>
+            <p>This build focuses on a complete, functional frontend. The current risk engine runs entirely in your browser using a transparent, weighted keyword/heuristic model — visible in <code>js/engine.js</code> — so the whole flow works standalone for demos, without an API key or backend. It's designed to be swapped for a real AI-assisted backend without changing any screen downstream.</p>
+            <div class="tech-pills">
+              <span class="tech-pill">HTML / CSS / JS</span>
+              <span class="tech-pill">Client-side heuristics engine</span>
+              <span class="tech-pill">localStorage history</span>
+              <span class="tech-pill">Planned: cloud backend + AI analysis</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pillar-row" id="disclaimer">
+          <span class="label">DISCLAIMER</span>
+          <div>
+            <h3>An assessment, not a verdict</h3>
+            <p>JobShield provides an automated, indicator-based risk assessment. It is not a definitive determination that any offer is or is not fraudulent. Always verify employers independently — through official websites, direct contact, and trusted job platforms — before sharing personal information or money.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <span>© 2026 JobShield</span>
+      <span>Student project — built in phases, see README for architecture.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="js/ui.js"></script>
+</body>
+</html>

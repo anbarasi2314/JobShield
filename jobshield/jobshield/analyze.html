@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analyze a Job Offer — JobShield</title>
+<meta name="description" content="Paste job text, enter a URL, or upload a screenshot to get an explainable job scam risk score.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22><path fill=%22%2333D6C0%22 d=%22M12 2 4 5v6c0 5 3.4 8.7 8 10 4.6-1.3 8-5 8-10V5l-8-3Z%22/></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="navbar">
+  <div class="container">
+    <a href="index.html" class="brand"><span class="brand-mark" data-icon="shield" data-icon-size="26"></span>JobShield</a>
+    <nav class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="about.html">About</a>
+      <a href="safety-tips.html">Safety Tips</a>
+    </nav>
+    <div class="nav-right">
+      <button class="nav-toggle" aria-label="Open menu" aria-expanded="false"></button>
+    </div>
+  </div>
+</header>
+
+<div class="mobile-menu">
+  <a href="index.html">Home</a>
+  <a href="how-it-works.html">How It Works</a>
+  <a href="about.html">About</a>
+  <a href="safety-tips.html">Safety Tips</a>
+</div>
+
+<main>
+
+  <!-- ============================== INPUT STAGE ============================== -->
+  <div id="stage-input">
+    <div class="page-head">
+      <div class="container">
+        <span class="eyebrow">Job Analyzer</span>
+        <h1>Analyze a Job Offer</h1>
+        <p>Choose how you want to submit the job or internship offer.</p>
+      </div>
+    </div>
+
+    <div class="analyzer-shell">
+      <div class="container">
+
+        <div class="method-tabs">
+          <button class="method-tab active" data-tab="text" type="button">
+            <span class="method-tab-icon" data-icon="doc" data-icon-size="19"></span>
+            <span><strong>Paste Job Text</strong><span>Paste the complete job or internship description.</span></span>
+          </button>
+          <button class="method-tab" data-tab="url" type="button">
+            <span class="method-tab-icon" data-icon="link" data-icon-size="19"></span>
+            <span><strong>Job URL</strong><span>Enter the URL of the job posting.</span></span>
+          </button>
+          <button class="method-tab" data-tab="image" type="button">
+            <span class="method-tab-icon" data-icon="image" data-icon-size="19"></span>
+            <span><strong>Upload Screenshot</strong><span>Upload a screenshot or image of the job offer.</span></span>
+          </button>
+        </div>
+
+        <!-- TEXT PANEL -->
+        <div class="input-panel card" data-panel="text">
+          <textarea class="field" id="text-input" maxlength="10000" placeholder="Paste the job description here..."></textarea>
+          <div class="field-meta"><span id="char-count">0 / 10,000 characters</span></div>
+          <div class="field-error" id="text-error"><span data-icon="alert" data-icon-size="15"></span>Please paste a job description before analyzing.</div>
+          <button class="btn btn-primary btn-lg" id="analyze-text-btn">Analyze Job <span data-icon="arrowRight" data-icon-size="16"></span></button>
+        </div>
+
+        <!-- URL PANEL -->
+        <div class="input-panel card input-panel-hidden" data-panel="url">
+          <input class="field" id="url-input" type="text" placeholder="https://example.com/job-posting">
+          <div class="field-error" id="url-error"><span data-icon="alert" data-icon-size="15"></span>Please enter a valid job posting URL.</div>
+          <div class="field-note"><span data-icon="info" data-icon-size="15"></span>Only analyze job postings from websites you trust. JobShield checks the link itself for warning patterns.</div>
+          <button class="btn btn-primary btn-lg" id="analyze-url-btn">Analyze URL <span data-icon="arrowRight" data-icon-size="16"></span></button>
+        </div>
+
+        <!-- IMAGE PANEL -->
+        <div class="input-panel card input-panel-hidden" data-panel="image">
+          <div class="dropzone" id="dropzone">
+            <div class="dropzone-icon" data-icon="upload" data-icon-size="46"></div>
+            <strong>Drag &amp; drop your image here</strong>
+            <p>or <u>browse files</u> · JPG, JPEG, PNG, WEBP · Maximum file size 10 MB</p>
+            <input type="file" id="image-input" accept=".jpg,.jpeg,.png,.webp">
+          </div>
+          <div class="upload-preview" id="upload-preview">
+            <img id="upload-preview-img" alt="Uploaded screenshot preview">
+            <div class="upload-preview-info">
+              <strong id="upload-preview-name">—</strong>
+              <span id="upload-preview-size">—</span>
+            </div>
+            <div class="upload-preview-actions">
+              <button type="button" id="upload-replace" title="Replace image" data-icon="swap" data-icon-size="15"></button>
+              <button type="button" id="upload-remove" title="Remove image" data-icon="trash" data-icon-size="15"></button>
+            </div>
+          </div>
+          <div class="upload-status" id="upload-status" aria-live="polite">No image uploaded yet.</div>
+          <div class="field-error" id="image-error"><span data-icon="alert" data-icon-size="15"></span>Please upload a screenshot before analyzing.</div>
+
+          <details class="ocr-fallback">
+            <summary>Screenshot text extraction (OCR) is a later build phase — optionally type any visible text for a fuller demo scan</summary>
+            <textarea class="field" id="image-ocr-fallback" maxlength="10000" placeholder="Optional: type text visible in the screenshot..." style="min-height:120px;"></textarea>
+          </details>
+
+          <div style="height:18px;"></div>
+          <button class="btn btn-primary btn-lg" id="analyze-image-btn">Analyze Image <span data-icon="arrowRight" data-icon-size="16"></span></button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== PROCESSING STAGE ============================== -->
+  <div class="processing-shell" id="stage-processing">
+    <div class="container">
+      <div class="processing-ring">
+        <svg viewBox="0 0 96 96">
+          <circle class="track" cx="48" cy="48" r="42"></circle>
+          <circle class="fill" id="ring-fill" cx="48" cy="48" r="42" stroke-dasharray="264" stroke-dashoffset="264"></circle>
+        </svg>
+        <div class="processing-ring-icon" data-icon="shield" data-icon-size="30"></div>
+      </div>
+      <h2 id="processing-title">Analyzing your submission…</h2>
+      <p>This usually takes just a few seconds.</p>
+
+      <div class="processing-steps">
+        <div class="p-step" data-step="0"><span class="check"><span data-icon="check" data-icon-size="11"></span></span>Reading job information</div>
+        <div class="p-step" data-step="1"><span class="check"><span data-icon="check" data-icon-size="11"></span></span>Extracting important details</div>
+        <div class="p-step" data-step="2"><span class="check"><span data-icon="check" data-icon-size="11"></span></span>Checking suspicious indicators</div>
+        <div class="p-step" data-step="3"><span class="check"><span data-icon="check" data-icon-size="11"></span></span>Evaluating risk factors</div>
+        <div class="p-step" data-step="4"><span class="check"><span data-icon="check" data-icon-size="11"></span></span>Generating explanation</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== RESULTS STAGE ============================== -->
+  <div class="results-shell" id="stage-results">
+    <div class="page-head">
+      <div class="container">
+        <span class="eyebrow">Report</span>
+        <h1>Job Safety Analysis</h1>
+        <p id="results-summary-line">This job posting was scanned against common scam indicators.</p>
+      </div>
+    </div>
+
+    <div class="container">
+
+      <div class="disclaimer-bar">
+        <span data-icon="info" data-icon-size="16"></span>
+        <span>This is an automated, indicator-based risk assessment — not a definitive determination that this offer is or isn't a scam. Always verify independently before sharing information or money.</span>
+      </div>
+
+      <div class="results-top">
+        <div class="meter-card card">
+          <div class="meter-wrap">
+            <svg viewBox="0 0 220 130">
+              <path d="M14 116 A96 96 0 0 1 206 116" fill="none" stroke="var(--surface-2)" stroke-width="14" stroke-linecap="round"/>
+              <path id="meter-arc" d="M14 116 A96 96 0 0 1 206 116" fill="none" stroke="var(--risk-high)" stroke-width="14" stroke-linecap="round" stroke-dasharray="290" stroke-dashoffset="290"/>
+            </svg>
+            <div class="meter-readout">
+              <div class="meter-score" id="meter-score">— <small>/100</small></div>
+            </div>
+          </div>
+          <span class="risk-badge high" id="meter-badge"><span class="dot"></span>—</span>
+          <p class="meter-summary" id="meter-summary">—</p>
+        </div>
+
+        <div class="results-side">
+          <div class="job-info-card card">
+            <h3>Extracted Job Information</h3>
+            <div class="job-info-grid" id="job-info-grid"><!-- injected --></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-card card">
+        <h3>Risk Breakdown</h3>
+        <p class="lede">Individual factors detected in this submission, ranked by severity.</p>
+        <div id="factor-list"><!-- injected --></div>
+      </div>
+
+      <div class="section-card card">
+        <h3>Why did JobShield give this score?</h3>
+        <p class="lede">A plain-language walkthrough of the main contributors — no cybersecurity background needed.</p>
+        <div id="explain-list"><!-- injected --></div>
+      </div>
+
+      <div class="section-card card">
+        <h3>What should you do?</h3>
+        <div class="reco-list" id="reco-list"><!-- injected --></div>
+      </div>
+
+      <div class="results-actions">
+        <button class="btn btn-primary" id="new-analysis-btn">Analyze Another Job</button>
+        <button class="btn btn-secondary" id="download-report-btn"><span data-icon="download" data-icon-size="16"></span>Download Report</button>
+        <button class="btn btn-secondary" id="share-results-btn"><span data-icon="share" data-icon-size="16"></span>Share Results</button>
+        <a href="analyze.html" class="btn btn-ghost" id="start-new-btn"><span data-icon="refresh" data-icon-size="16"></span>Start New Analysis</a>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <span>© 2026 JobShield</span>
+      <span>Risk assessments are indicator-based, not a definitive determination.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/analyze.js"></script>
+</body>
+</html>

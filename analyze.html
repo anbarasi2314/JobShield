@@ -15,11 +15,13 @@
     <a href="index.html" class="brand"><span class="brand-mark" data-icon="shield" data-icon-size="26"></span>JobShield</a>
     <nav class="nav-links">
       <a href="index.html">Home</a>
-      <a href="how-it-works.html">How It Works</a>
+      <a href="index.html#how-it-works">How It Works</a>
       <a href="about.html">About</a>
       <a href="safety-tips.html">Safety Tips</a>
     </nav>
     <div class="nav-right">
+      <a href="history.html" class="btn btn-secondary">History</a>
+      <a href="analyze.html" class="btn btn-primary">Analyze Job</a>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false"></button>
     </div>
   </div>
@@ -27,9 +29,11 @@
 
 <div class="mobile-menu">
   <a href="index.html">Home</a>
-  <a href="how-it-works.html">How It Works</a>
+  <a href="index.html#how-it-works">How It Works</a>
   <a href="about.html">About</a>
   <a href="safety-tips.html">Safety Tips</a>
+  <a href="history.html">My History</a>
+  <a href="analyze.html" class="btn btn-primary btn-block">Analyze a Job →</a>
 </div>
 
 <main>
@@ -97,7 +101,6 @@
               <button type="button" id="upload-remove" title="Remove image" data-icon="trash" data-icon-size="15"></button>
             </div>
           </div>
-          <div class="upload-status" id="upload-status" aria-live="polite">No image uploaded yet.</div>
           <div class="field-error" id="image-error"><span data-icon="alert" data-icon-size="15"></span>Please upload a screenshot before analyzing.</div>
 
           <details class="ocr-fallback">
@@ -174,6 +177,11 @@
             <div class="job-info-grid" id="job-info-grid"><!-- injected --></div>
           </div>
         </div>
+      </div>
+
+      <div class="info-stack">
+        <div class="card signal-card" id="ai-detection-card"></div>
+        <div class="card signal-card" id="missing-info-card"></div>
       </div>
 
       <div class="section-card card">

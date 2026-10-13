@@ -1,288 +1,503 @@
-/* ==========================================================================
-   JobShield — Analysis Engine (Phase 1-3 demo implementation)
+﻿/* ==========================================================================
+   JobShield — Centralized Risk Engine
 
-   This is a transparent, client-side, KEYWORD/HEURISTIC based scoring
-   engine — it is a stand-in for the real AI-assisted backend described in
-   the project's later phases (see README.md, Phase 5). It exists so the
-   full frontend flow — submit, process, score, explain, recommend, save —
-   is genuinely functional for demos, without requiring a live AI API key
-   or backend deployment. Swap `runAnalysis()`'s internals for a real
-   backend call and every screen downstream keeps working unchanged.
+   This version keeps the same frontend-only design but replaces the old
+   score-by-keyword logic with a single scoring flow that:
+   - collects all fraud indicators,
+   - validates missing critical information,
+   - runs AI-content heuristics as an additional signal,
+   - enforces minimum-risk rules for missing title/location/company,
+   - and applies the final risk level consistently across text, URL, and image
+   inputs.
    ========================================================================== */
 
 const JobShieldEngine = (() => {
+  const CONFIG = {
+    thresholds: { low: 29, medium: 59, high: 60 },
+    aiHighRisk: true,
+    aiConfidenceHigh: 0.75,
+    aiConfidenceMedium: 0.55,
+    minimumMediumForMissingCriticalFields: true,
+  };
 
-  // Each rule: id, label, category, weight, matcher(text) -> bool, explain(text)
   const RULES = [
     {
       id: 'payment',
       name: 'Payment Request',
-      weight: 30,
-      test: t => /(registration fee|processing fee|security deposit|refundable deposit|pay.{0,15}(to (start|join|secure)|before you start)|advance payment|training fee|kit fee|joining fee)/i.test(t),
-      text: 'The posting asks applicants to pay a fee — registration, training, deposit, or similar — before or during hiring.',
-      recoLow: null,
+      weight: 35,
+      test: t => /(registration fee|processing fee|security deposit|refundable deposit|advance payment|training fee|kit fee|joining fee|pay.{0,20}(to (start|join|secure)|before you start)|pay upfront|registration charges)/i.test(t),
+      text: 'The posting asks applicants to pay a fee before or during the hiring process, which is uncommon in legitimate hiring.',
     },
     {
       id: 'salary',
       name: 'Salary Claim',
       weight: 18,
-      test: t => /(₹\s?[5-9]\d,?\d{3,}\s?\/?\s?(day|week)|\$\s?\d{3,}\s?\/?\s?(day|week)|earn.{0,20}(daily|weekly|per day)|guaranteed income|no experience.{0,25}(high pay|high salary|lakh))/i.test(t),
-      text: 'The advertised compensation looks unusually high relative to the stated role, experience level, or working hours.',
+      test: t => /(₹\s?[5-9]\d,?\d{3,}\s?(?:\/|per)?\s?(?:day|week)|\$\s?\d{3,}\s?(?:\/|per)?\s?(?:day|week)|guaranteed income|earn.{0,20}(daily|weekly|per day)|no experience.{0,25}(high pay|high salary|lakh))/i.test(t),
+      text: 'The compensation is unusually high or unrealistic for the role, experience, or work pattern described.',
     },
     {
       id: 'contact',
       name: 'Contact Information',
       weight: 14,
-      test: t => /(whatsapp only|contact.{0,15}on whatsapp|@gmail\.com|@yahoo\.com|@hotmail\.com|telegram (only|group)|no official email)/i.test(t),
-      text: 'Contact is routed through a free personal email domain or a messaging app instead of an official company channel.',
+      test: t => /(whatsapp only|contact.{0,15}on whatsapp|@gmail\.com|@yahoo\.com|@hotmail\.com|telegram (only|group)|no official email|reach us on whatsapp)/i.test(t),
+      text: 'Contact is routed through a free personal email or messaging app instead of an official company channel.',
     },
     {
       id: 'urgency',
       name: 'Urgency & Pressure',
       weight: 16,
       test: t => /(limited (seats|slots)|act now|apply immediately|only \d+ (spots|seats|positions) left|urgent(ly)? (hiring|required)|hurry|offer expires|today only|immediate joining)/i.test(t),
-      text: 'The posting uses pressure-based language pushing applicants toward an immediate decision, which limits time to verify details.',
+      text: 'The posting uses pressure-based language that pushes applicants to decide quickly without proper verification.',
     },
     {
       id: 'personal-info',
       name: 'Sensitive Data Requests',
-      weight: 20,
-      test: t => /(bank account (number|details)|aadhaar|passport number|otp|credit card|debit card|upi pin|ifsc code|social security)/i.test(t),
-      text: 'The posting or process requests sensitive personal or financial information earlier than a legitimate hiring process typically requires.',
+      weight: 30,
+      test: t => /(bank account (number|details)|aadhaar|passport number|otp|credit card|debit card|upi pin|ifsc code|pan number|social security|account details)/i.test(t),
+      text: 'The process requests sensitive personal or banking information much earlier than a standard hiring workflow would normally require.',
     },
     {
       id: 'links',
       name: 'External / Unofficial Links',
       weight: 10,
-      test: t => /(bit\.ly|tinyurl|shorturl|forms\.gle\/[a-z0-9]|click here to (register|verify|claim))/i.test(t),
-      text: 'The posting relies on a shortened or generic form link rather than an official company domain.',
-    },
-    {
-      id: 'company-info',
-      name: 'Missing Company Details',
-      weight: 15,
-      test: t => !/(pvt\.?\s?ltd|private limited|inc\.|llc|technologies|solutions|systems|corp|company name|www\.[a-z0-9-]+\.[a-z]{2,})/i.test(t),
-      text: 'Important employer information — a registered name, an official website, or a verifiable address — is not clearly provided.',
+      test: t => /(bit\.ly|tinyurl|shorturl|forms\.gle\/[a-z0-9]|click here to (register|verify|claim)|join via link|register here)/i.test(t),
+      text: 'The posting relies on shortened or generic links rather than a clear official company channel.',
     },
     {
       id: 'process',
       name: 'Unusual Hiring Process',
       weight: 12,
-      test: t => /(no interview|interview.{0,15}chat only|hired instantly|no resume (needed|required)|selected without interview)/i.test(t),
-      text: 'The hiring process skips standard steps such as a resume review or interview, which is uncommon for a genuine role.',
+      test: t => /(no interview|interview.{0,15}chat only|hired instantly|no resume (needed|required)|selected without interview|immediate selection)/i.test(t),
+      text: 'The hiring process skips standard screening steps such as a resume review or interview.',
     },
   ];
 
-  const BASE_NOISE = 4; // small baseline so a totally clean text isn't a hard 0
+  const DEFAULT_INFO = {
+    title: null,
+    company: null,
+    location: null,
+    salary: null,
+    experience: null,
+    skills: null,
+    contact: null,
+    application: null,
+    payment: null,
+    source: null,
+  };
 
-  function checkMissingRequiredFields(parsedListing) {
-    const normalized = parsedListing || {};
-    const missing = [];
-    const text = normalizeText((parsedListing && parsedListing.source) || '');
-
-    if (!normalized.title) missing.push('job title');
-    if (!normalized.company) missing.push('company name');
-    if (!normalized.location) missing.push('location');
-    if (!normalized.salary) missing.push('salary details');
-    if (!normalized.employmentType && !normalized.workMode) missing.push('employment type or work mode');
-    if (!/(?:[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}|\+?\d[\d\s-]{7,}|whatsapp)/i.test(text || '')) {
-      missing.push('contact details');
-    }
-
-    if (!missing.length) return { missing: [], weight: 0, summary: null, id: 'missing-info', name: 'Missing Information' };
-
-    const weight = Math.min(18, Math.max(8, missing.length * 5));
-    const summary = missing.length >= 4
-      ? 'The listing is missing several key hiring details, which makes it harder to verify the employer or the role.'
-      : 'The listing does not clearly include a few essential hiring details, which reduces transparency and increases risk.';
-
-    return {
-      missing,
-      weight,
-      summary,
-      id: 'missing-info',
-      name: 'Missing Information',
-    };
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
   }
 
-  function classify(score) {
-    if (score >= 70) return { level: 'HIGH RISK', tone: 'high', emoji: '🚨' };
-    if (score >= 45) return { level: 'ELEVATED RISK', tone: 'elevated', emoji: '⚠️' };
-    if (score >= 20) return { level: 'MEDIUM RISK', tone: 'medium', emoji: '!' };
+  function normalizeText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function severityFromWeight(weight) {
+    if (weight >= 25) return 'high';
+    if (weight >= 13) return 'elevated';
+    return 'medium';
+  }
+
+  function dedupeById(items) {
+    const seen = new Set();
+    return (items || []).filter(item => {
+      if (!item || !item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }
+
+  function classifyByScore(score) {
+    if (score >= CONFIG.thresholds.high) return { level: 'HIGH RISK', tone: 'high', emoji: '🚨' };
+    if (score >= CONFIG.thresholds.low) return { level: 'MEDIUM RISK', tone: 'medium', emoji: '!' };
     return { level: 'LOW RISK', tone: 'low', emoji: '✓' };
   }
 
-  function normalizeText(text) {
-    return (text || '').replace(/\r/g, ' ').replace(/\s+/g, ' ').trim();
-  }
-
   function extractJobInfo(text) {
-    const cleaned = normalizeText(text);
-    const info = {
-      title: null,
-      company: null,
-      location: null,
-      salary: null,
-      experience: null,
-      employmentType: null,
-      workMode: null,
-      skills: null,
-      source: null,
-    };
+    const info = { ...DEFAULT_INFO };
+    const raw = normalizeText(text);
+    if (!raw) return info;
 
-    const lines = cleaned.split(/\n+/).map(line => line.trim()).filter(Boolean);
-    const titleLine = lines.find(line => /\b(intern(?:ship)?|developer|engineer|analyst|designer|manager|associate|executive|sales|marketing|business|customer|support)\b/i.test(line) && line.length < 100 && !/(salary|company|location|contact|whatsapp|gmail|aadhaar|pan|bank|urgent|hurry|fee)/i.test(line));
-    if (titleLine) {
-      info.title = titleLine.replace(/^[\-\*\d\.\s]+/, '').trim();
+    const titlePatterns = [
+      /(?:position|role|job title|hiring for|title)\s*[:\-]\s*([A-Za-z0-9 &/\-.]{3,80})/i,
+      /\b([A-Z][A-Za-z0-9 &/\-.]{2,80}\s(?:Intern(?:ship)?|Engineer|Developer|Analyst|Designer|Manager|Associate|Executive|Specialist|Coordinator|Writer|Consultant|Architect))\b/i,
+      /\b(?:Data Analyst(?: Intern)?|Software Engineer|Business Analyst|HR Executive|Marketing Executive|Customer Support Executive|Content Writer|UI\/UX Designer|Python Developer|Internship)\b/i,
+    ];
+    for (const pattern of titlePatterns) {
+      const match = raw.match(pattern);
+      if (match && match[1]) {
+        info.title = match[1].trim();
+        break;
+      }
     }
 
-    const explicitTitle = cleaned.match(/(?:position|role|job title|hiring for|opening for)\s*[:\-]\s*([A-Za-z0-9 &/\-]{3,80})/i);
-    if (explicitTitle && !info.title) info.title = explicitTitle[1].trim();
+    const companyPatterns = [
+      /(?:company|organization|organisation|employer|firm)\s*[:\-]\s*([A-Za-z0-9 &.,'\-]{2,80})/i,
+      /\bat\s+([A-Z][A-Za-z0-9 &.'\-]{2,80}(?:\s(?:Technologies|Technology|Solutions|Systems|Pvt\.?\s?Ltd\.?|Private Limited|Inc\.?|LLC|Corp\.?|Group|Labs|Consulting|Services))?)/i,
+      /\bwith\s+([A-Z][A-Za-z0-9 &.'\-]{2,80}(?:\s(?:Technologies|Technology|Solutions|Systems|Pvt\.?\s?Ltd\.?|Private Limited|Inc\.?|LLC|Corp\.?|Group|Labs|Consulting|Services))?)/i,
+    ];
+    for (const pattern of companyPatterns) {
+      const match = raw.match(pattern);
+      if (match && match[1]) {
+        info.company = match[1].trim();
+        break;
+      }
+    }
 
-    const companyPattern = /([A-Z][A-Za-z0-9&.'-]+(?:\s+(?:Solutions|Technologies|Systems|Pvt\.?\s?Ltd\.?|Private\s+Limited|Inc\.?|LLC|Corp\.?|Group)))/g;
-    const companyMatches = [...cleaned.matchAll(companyPattern)];
-    const companyMatch = companyMatches.find(match => !/(whatsapp|gmail|hurry|urgent|apply|job|salary|contact|fee)/i.test(match[1]));
-    if (companyMatch) info.company = companyMatch[1].trim();
+    const locationPatterns = [
+      /(?:location|based in|work from|city|place)\s*[:\-]\s*([A-Za-z0-9 .,'-]{2,80})/i,
+      /\b(remote|work from home|wfh|hybrid|onsite|Bengaluru|Delhi|Mumbai|Hyderabad|Pune|Chennai|Kolkata|Noida|Gurugram|Jaipur)\b/i,
+    ];
+    for (const pattern of locationPatterns) {
+      const match = raw.match(pattern);
+      if (match && (match[1] || match[0])) {
+        info.location = (match[1] || match[0]).trim();
+        break;
+      }
+    }
 
-    const companyLabel = cleaned.match(/(?:company|organization|organisation|employer)\s*[:\-]\s*([A-Za-z0-9 &.,'\-]{2,80})/i);
-    if (companyLabel && !info.company) info.company = companyLabel[1].trim();
+    const salaryMatch = raw.match(/(?:salary|stipend|pay|compensation)\s*[:\-]?\s*(₹\s?[\d,]+(?:\s*[-–to]+\s*₹?\s?[\d,]+)?\s*(?:LPA|lakhs?|k|K)?|\$\s?[\d,]+(?:\s*[-–to]+\s*\$?\s?[\d,]+)?\s*(?:k|K)?)\b/i)
+      || raw.match(/(₹\s?[\d,]+\s*(?:LPA|lakhs?|k|K)|\$\s?[\d,]+\s*(?:k|K))\b/i)
+      || raw.match(/(₹\s?[\d,]+(?:\s*[-–to]+\s*₹?\s?[\d,]+)?\s*(?:per\s*(?:month|day|week|year)|\/\s*(?:month|day|week|year))?)/i);
+    if (salaryMatch) info.salary = String(salaryMatch[1] || salaryMatch[0] || '').trim();
 
-    const locationMatch = cleaned.match(/(?:location|based in|work from|work mode)\s*[:\-]?\s*([A-Za-z0-9 ,\-]{2,80})/i) || cleaned.match(/\b(?:work from home|remote|wfh|hybrid|onsite|office)\b/i);
-    if (locationMatch) info.location = (locationMatch[1] || locationMatch[0]).trim();
+    const expMatch = raw.match(/(?:experience|requirements?)\s*[:\-]?\s*(?:required|minimum)?\s*(fresher|no experience|\d+\+?\s?years?\s?(?:of)?\s?experience|\d+\s?[-–to]?\s?\d*\s?years?|entry[- ]level|0-?\d+\s?years?)/i)
+      || raw.match(/\b(fresher|no experience|\d+\+?\s?years?\s?(?:of)?\s?experience|\d+\s?[-–to]?\s?\d*\s?years?|entry[- ]level)\b/i);
+    if (expMatch) info.experience = expMatch[1] || expMatch[0];
 
-    const salaryMatch = cleaned.match(/(?:salary|pay|compensation|monthly salary|package)\s*[:\-]?\s*(₹\s?[\d,]+(?:\s*[-–]\s*₹?\s?[\d,]+)?\s*(?:per|\/)?\s*(?:month|day|week|year|annum))/i)
-      || cleaned.match(/(₹\s?[\d,]+(?:\s*[-–]\s*₹?\s?[\d,]+)?\s*(?:per|\/)?\s*(?:month|day|week|year|annum))/i)
-      || cleaned.match(/(?:salary|pay)\s*[:\-]?\s*(\$\s?[\d,]+(?:\s*[-–]\s*\$?\s?[\d,]+)?\s*(?:per|\/)?\s*(?:month|day|week|year))/i);
-    if (salaryMatch) info.salary = (salaryMatch[1] || salaryMatch[0]).trim();
-
-    const expMatch = cleaned.match(/(?:experience|required|eligibility)\s*[:\-]?\s*([A-Za-z0-9 .,+-]{2,80})/i) || cleaned.match(/\b(?:fresher|no experience|0[- ]?1 year|1[- ]?2 years?|2[- ]?3 years?|3[- ]?5 years?)\b/i);
-    if (expMatch) info.experience = (expMatch[1] || expMatch[0]).trim();
-
-    const employmentTypeMatch = cleaned.match(/(?:employment type|job type)\s*[:\-]?\s*([A-Za-z0-9 ,\-]{2,50})/i);
-    if (employmentTypeMatch) info.employmentType = employmentTypeMatch[1].trim();
-
-    const workModeMatch = cleaned.match(/(?:work mode|mode of work|work from)\s*[:\-]?\s*([A-Za-z0-9 ,\-]{2,50})/i) || cleaned.match(/\b(?:work from home|remote|wfh|hybrid|onsite)\b/i);
-    if (workModeMatch) info.workMode = (workModeMatch[1] || workModeMatch[0]).trim();
-
-    const skillsMatch = cleaned.match(/(?:skills|requirements|preferred skills)\s*[:\-]?\s*([A-Za-z0-9 ,/\-]{2,200})/i);
+    const skillsMatch = raw.match(/(?:skills|required skills|must have|good to have)\s*[:\-]\s*([A-Za-z0-9, /&.()\-]{3,220})/i);
     if (skillsMatch) info.skills = skillsMatch[1].trim();
+
+    const contactMatch = raw.match(/(?:contact|email|reach us|apply at|send resume to)\s*[:\-]?\s*([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|\+?\d{10,14}|whatsapp\s*[:\-]?\s*\+?\d{10,14})/i);
+    if (contactMatch) info.contact = contactMatch[1].trim();
+
+    const appMatch = raw.match(/(?:apply|application|submission)\s*(?:via|through|on|using)?\s*[:\-]?\s*([A-Za-z0-9 .,'/-]{2,80})/i);
+    if (appMatch) info.application = appMatch[1].trim();
+
+    const paymentMatch = raw.match(/(?:payment|registration|processing|training|deposit|joining)\s*(?:fee|charges?|amount)\s*[:\-]?\s*(₹?\s?[\d,]+|\$?\s?[\d,]+)/i);
+    if (paymentMatch) info.payment = paymentMatch[0].trim();
 
     return info;
   }
 
-  /**
-   * Run the heuristic scan over a body of text (from paste, URL-derived
-   * content, or OCR/typed-fallback text from an image).
-   */
-  function scoreText(text) {
-    const cleaned = normalizeText(text);
-    const t = cleaned.toLowerCase();
-    const factors = [];
-    let raw = BASE_NOISE;
-
-    const jobInfo = extractJobInfo(cleaned);
-    const missingInfo = checkMissingRequiredFields(jobInfo);
-    if (missingInfo && missingInfo.weight) {
-      raw += missingInfo.weight;
-      factors.push({
-        id: missingInfo.id,
-        name: missingInfo.name,
-        weight: missingInfo.weight,
-        text: missingInfo.summary,
-      });
+  function detectAIContent(text) {
+    const raw = normalizeText(text);
+    if (!raw) {
+      return {
+        flagged: false,
+        flaggedHigh: false,
+        confidence: 0,
+        label: 'No text available',
+        reasons: ['No textual content was provided to evaluate.'],
+      };
     }
 
+    const lower = raw.toLowerCase();
+    let score = 0;
+    const reasons = [];
+
+    const aiPhrases = [
+      'dynamic team', 'innovative', 'cutting-edge', 'driven by', 'passionate', 'synergy', 'seamless', 'state-of-the-art',
+      'fast-paced environment', 'revolutionize', 'game changer', 'excellent communication skills', 'disruptive', 'robust', 'solution-driven', 'collaborative',
+      'unlock opportunities', 'transformative', 'strategic thinker', 'stay ahead'
+    ];
+
+    aiPhrases.forEach(phrase => {
+      if (lower.includes(phrase)) {
+        score += 8;
+      }
+    });
+
+    if ((lower.match(/\b(?:we are looking for|we are seeking|seeking a motivated|dynamic individual|passionate professional)\b/gi) || []).length >= 2) {
+      score += 12;
+      reasons.push('The wording uses generic hiring language commonly associated with AI-generated copy.');
+    }
+
+    if ((lower.match(/\b(?:python|sql|excel|power bi|tableau|data analysis|analytics|business intelligence)\b/gi) || []).length >= 3) {
+      score -= 10;
+    }
+
+    if (/(resume|interview|location|salary|company|apply|selection process|job description)/i.test(raw)) {
+      score -= 4;
+    }
+
+    const bulletCount = (raw.match(/(?:^|\n)\s*[-*•]/g) || []).length;
+    if (bulletCount >= 4) {
+      score += 10;
+      reasons.push('The description contains a highly repetitive bullet list structure often used in templated AI output.');
+    }
+
+    const genericWordCount = (lower.match(/\b(?:dynamic|passionate|innovative|excellent|cutting-edge|seamless|strategic|proactive|driven|collaborative|creative)\b/g) || []).length;
+    if (genericWordCount >= 4) {
+      score += 12;
+      reasons.push('The text contains multiple generic buzzwords without enough concrete company or role details.');
+    }
+
+    const specificitySignals = [
+      /\b(?:Bengaluru|Delhi|Mumbai|Hyderabad|Pune|Chennai|Kolkata|Noida|Gurugram|Jaipur)\b/i,
+      /(?:company|organization|firm)\s*[:\-]/i,
+      /(?:role|position|title)\s*[:\-]/i,
+      /(?:salary|stipend|experience|location)\s*[:\-]/i,
+      /\b[A-Z][a-z]+\s+(?:Technologies|Systems|Solutions|Private Limited|Pvt\.?\s?Ltd\.)\b/
+    ];
+    const specificityMatches = specificitySignals.filter(re => re.test(raw)).length;
+    if (specificityMatches >= 2) score -= 8;
+
+    const confidence = clamp(score / 100, 0, 1);
+    const flaggedHigh = confidence >= CONFIG.aiConfidenceHigh;
+    const flagged = confidence >= CONFIG.aiConfidenceMedium || flaggedHigh;
+
+    return {
+      flagged,
+      flaggedHigh,
+      confidence: Math.round(confidence * 100),
+      label: flaggedHigh ? 'Highly likely AI-generated' : flagged ? 'Possibly AI-generated' : 'No strong AI-generation signal',
+      reasons: reasons.length ? reasons : (flagged ? ['The language appears somewhat generic or template-like, but this is not proof of fraud.'] : ['The text used concrete, specific language and did not match typical AI-generation warning patterns.']),
+    };
+  }
+
+  function buildFactor(id, name, weight, text, extra = {}) {
+    return {
+      id,
+      name,
+      weight,
+      text,
+      severity: extra.severity || severityFromWeight(weight),
+      ...extra,
+    };
+  }
+
+  function detectFraudFactors(text) {
+    const normalized = normalizeText(text).toLowerCase();
+    const factors = [];
+
     RULES.forEach(rule => {
-      if (rule.test(t)) {
-        raw += rule.weight;
-        factors.push({
-          id: rule.id,
-          name: rule.name,
-          weight: rule.weight,
-          text: rule.text,
+      if (rule.test(normalized)) {
+        factors.push(buildFactor(rule.id, rule.name, rule.weight, rule.text, { source: 'heuristic' }));
+      }
+    });
+
+    return dedupeById(factors);
+  }
+
+  function calculateRiskScore(input = {}) {
+    const sourceText = normalizeText(input.text || '');
+    const jobInfo = {
+      ...DEFAULT_INFO,
+      ...(input.jobInfo || extractJobInfo(sourceText)),
+    };
+    const aiDetection = input.aiDetection || detectAIContent(sourceText);
+
+    const factors = [...(input.factors || [])];
+    const heuristicFactors = detectFraudFactors(sourceText);
+    heuristicFactors.forEach(f => factors.push(f));
+
+    const missingInfoWarnings = [];
+    const criticalFieldChecks = [
+      { key: 'title', label: 'Job title', weight: 18, text: 'The posting does not clearly state the role or position being offered.' },
+      { key: 'location', label: 'Location', weight: 16, text: 'The posting does not clearly state where the role is based.' },
+      { key: 'company', label: 'Company name', weight: 12, text: 'The posting does not identify the company or employer clearly.' },
+    ];
+
+    criticalFieldChecks.forEach(field => {
+      if (!jobInfo[field.key]) {
+        missingInfoWarnings.push({
+          id: `missing-${field.key}`,
+          name: `Missing ${field.label}`,
+          weight: field.weight,
+          text: field.text,
+          severity: 'medium',
+          source: 'missing-field',
         });
       }
     });
 
-    const score = Math.max(0, Math.min(100, Math.round(raw)));
-    const { level, tone, emoji } = classify(score);
+    if (!jobInfo.salary) {
+      missingInfoWarnings.push({
+        id: 'missing-salary',
+        name: 'Missing salary information',
+        weight: 6,
+        text: 'The role does not clearly state the salary or stipend, which can make the offer harder to verify.',
+        severity: 'medium',
+        source: 'missing-field',
+      });
+    }
 
-    // Rank factors by weight for display severity, cap at 6 shown
-    factors.sort((a, b) => b.weight - a.weight);
-    const factorsOut = factors.slice(0, 6).map(f => ({
-      ...f,
-      severity: f.weight >= 20 ? 'high' : f.weight >= 13 ? 'elevated' : 'medium',
-    }));
+    missingInfoWarnings.forEach(m => {
+      const exists = factors.some(f => f.id === m.id);
+      if (!exists) factors.push(buildFactor(m.id, m.name, m.weight, m.text, { severity: m.severity, source: m.source }));
+    });
 
-    const result = {
-      score,
-      riskScore: score,
-      level,
-      riskLevel: level,
-      tone,
-      emoji,
-      factors: factorsOut,
-      riskFactors: factorsOut,
-      jobInfo,
-      recommendations: recommendations(tone),
+    if (aiDetection && aiDetection.flaggedHigh && CONFIG.aiHighRisk) {
+      factors.push(buildFactor('ai-generated', 'AI-generated content signal', 42, 'AI-content detection flagged the text as highly likely to be machine-generated or templated. This is only one indicator and can produce false positives.', { severity: 'high', source: 'ai-detector' }));
+    } else if (aiDetection && aiDetection.flagged) {
+      factors.push(buildFactor('ai-generated', 'AI-content signal', 18, 'AI-content detection suggests the posting may be formulaic or machine-generated. This should be treated as one signal and not as proof of fraud.', { severity: 'elevated', source: 'ai-detector' }));
+    }
+
+    const uniqueFactors = dedupeById(factors);
+    const numericScore = uniqueFactors.reduce((total, factor) => total + Number(factor.weight || 0), 0);
+    const cappedScore = clamp(Math.round(numericScore), 0, 100);
+
+    let finalScore = cappedScore;
+    const missingCritical = criticalFieldChecks.filter(field => !jobInfo[field.key]).length;
+    if (CONFIG.minimumMediumForMissingCriticalFields && missingCritical > 0) {
+      finalScore = Math.max(finalScore, 30);
+    }
+
+    const seriousFraud = uniqueFactors.filter(f => ['payment', 'personal-info', 'ai-generated'].includes(f.id) || f.weight >= 25).length;
+    const hasHighRiskRule = aiDetection && aiDetection.flaggedHigh && CONFIG.aiHighRisk;
+    if (hasHighRiskRule || seriousFraud >= 2) {
+      finalScore = Math.max(finalScore, 60);
+    }
+
+    finalScore = clamp(finalScore, 0, 100);
+    const classified = classifyByScore(finalScore);
+
+    const evidence = {
+      score: finalScore,
+      level: classified.level,
+      tone: classified.tone,
+      emoji: classified.emoji,
+      aiDetection,
+      missingInfoWarnings,
+      factors: uniqueFactors
+        .sort((a, b) => Number(b.weight) - Number(a.weight))
+        .slice(0, 8)
+        .map(f => ({
+          ...f,
+          severity: f.severity || severityFromWeight(f.weight),
+        })),
+      jobInfo: {
+        ...jobInfo,
+        source: input.source || jobInfo.source || null,
+      },
       analyzedAt: new Date().toISOString(),
+      warning: input.warning || null,
     };
-    return result;
+
+    evidence.level = (finalScore >= CONFIG.thresholds.high || hasHighRiskRule) ? 'HIGH RISK'
+      : (finalScore >= CONFIG.thresholds.low || missingCritical > 0) ? 'MEDIUM RISK'
+      : 'LOW RISK';
+    evidence.tone = evidence.level === 'HIGH RISK' ? 'high' : evidence.level === 'MEDIUM RISK' ? 'medium' : 'low';
+    evidence.emoji = evidence.level === 'HIGH RISK' ? '🚨' : evidence.level === 'MEDIUM RISK' ? '!' : '✓';
+
+    return evidence;
+  }
+
+  function scoreText(text) {
+    const cleanText = normalizeText(text);
+    const jobInfo = extractJobInfo(cleanText);
+    const aiDetection = detectAIContent(cleanText);
+    return calculateRiskScore({ text: cleanText, jobInfo, aiDetection, source: 'Pasted job text' });
+  }
+
+  async function fetchUrlContent(url) {
+    const safeUrl = normalizeText(url);
+    if (!safeUrl) {
+      return { ok: false, text: '', error: 'A URL was not provided.' };
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(/^https?:\/\//i.test(safeUrl) ? safeUrl : `https://${safeUrl}`);
+    } catch (error) {
+      return { ok: false, text: '', error: 'The provided URL is malformed or cannot be parsed.' };
+    }
+
+    try {
+      const response = await fetch(parsed.toString(), {
+        method: 'GET',
+        headers: { Accept: 'text/html,application/xhtml+xml' },
+      });
+      if (!response.ok) throw new Error(`Request failed with status ${response.status}.`);
+      const html = await response.text();
+      const text = html
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return text ? { ok: true, text, url: parsed.toString() } : { ok: false, text: '', error: 'The page loaded, but no readable text could be extracted.' };
+    } catch (error) {
+      return { ok: false, text: '', error: 'The page could not be downloaded or is blocked by browser security settings or CORS.' };
+    }
   }
 
   async function scoreUrl(url) {
-    let combinedText = url || '';
-    try {
-      const safeUrl = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-      const u = new URL(safeUrl);
-      if (u.protocol !== 'https:') combinedText += ' not-https ';
-      if (/bit\.ly|tinyurl|shorturl|is\.gd/i.test(u.hostname)) combinedText += ' click here to verify shortened link ';
-      if (/\d{3,}/.test(u.hostname) || /-jobs?-|-hiring-|freegift/i.test(u.hostname)) combinedText += ' limited seats urgent ';
-      if (!/\.(com|org|in|net|co)$/i.test(u.hostname)) combinedText += ' missing company details ';
-
-      try {
-        const response = await fetch(u.toString(), { method: 'GET', mode: 'cors' });
-        if (response.ok) {
-          const html = await response.text();
-          const textFromHtml = html.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          if (textFromHtml) combinedText += ` ${textFromHtml}`;
-        }
-      } catch (error) {
-        // Fall back to URL-based heuristic scanning when the page cannot be fetched directly.
-      }
-    } catch (e) {
-      combinedText = `${url || ''} missing company details suspicious job posting`;
+    const safeUrl = normalizeText(url);
+    if (!safeUrl) {
+      return calculateRiskScore({
+        text: 'No job URL was provided.',
+        jobInfo: { ...DEFAULT_INFO, source: safeUrl },
+        aiDetection: { flagged: false, flaggedHigh: false, confidence: 0, label: 'Unavailable', reasons: ['No URL was supplied.'] },
+        warning: 'No URL was provided for analysis.',
+      });
     }
 
-    const result = scoreText(combinedText);
-    result.jobInfo = result.jobInfo || {};
-    result.jobInfo.source = url;
+    let fetchResult;
+    try {
+      fetchResult = await fetchUrlContent(safeUrl);
+    } catch (error) {
+      fetchResult = { ok: false, text: '', error: String(error) };
+    }
+
+    const extractedText = fetchResult.ok ? fetchResult.text : `The URL could not be accessed for extraction. ${fetchResult.error} This does not automatically mean the job is fraudulent; the page may be blocked, inaccessible, or protected from automated reading.`;
+    const aiDetection = detectAIContent(extractedText);
+    const result = calculateRiskScore({
+      text: extractedText,
+      jobInfo: extractJobInfo(extractedText),
+      aiDetection,
+      source: fetchResult.url || safeUrl,
+      warning: fetchResult.ok ? null : 'Insufficient evidence: the URL could not be accessed or parsed. This is not proof of fraud.',
+    });
+
+    if (!fetchResult.ok) {
+      result.warning = 'Insufficient evidence: the URL could not be accessed or parsed. This is not proof of fraud.';
+      result.factors.push(buildFactor('url-unreadable', 'URL content not accessible', 12, 'The page could not be accessed or parsed so the assessment is based on limited evidence only.', { severity: 'medium', source: 'url-fetch' }));
+      result.factors = dedupeById(result.factors).sort((a, b) => Number(b.weight) - Number(a.weight));
+      result.score = clamp(Math.max(result.score, 20), 0, 100);
+      result.level = result.score >= 60 ? 'HIGH RISK' : result.score >= 30 ? 'MEDIUM RISK' : 'LOW RISK';
+      result.tone = result.level === 'HIGH RISK' ? 'high' : result.level === 'MEDIUM RISK' ? 'medium' : 'low';
+      result.emoji = result.level === 'HIGH RISK' ? '🚨' : result.level === 'MEDIUM RISK' ? '!' : '✓';
+    }
+
     return result;
   }
 
-  function recommendations(tone) {
-    if (tone === 'high' || tone === 'elevated') {
-      return [
-        'Do not pay any registration, training, or "refundable" deposit fees.',
-        'Verify the company independently through its official website and registered address.',
-        'Confirm the recruiter is using an official company email domain, not a free provider.',
-        'Avoid sharing bank details, ID numbers, or OTPs during early hiring stages.',
-        'Cross-check the posting on trusted job platforms before responding further.',
-      ];
-    }
-    return [
-      'Still verify the employer independently, even for lower-risk postings.',
-      'Check the official company website and look for an "About" or careers page.',
-      'Confirm the recruiter\'s identity and role before an interview.',
-      'Avoid sharing sensitive personal information unless the process clearly requires it.',
-    ];
+  function scoreCombined(evidence = {}) {
+    const textSegments = [
+      evidence.text || '',
+      evidence.urlText || '',
+      evidence.imageText || '',
+    ].filter(Boolean);
+
+    const combinedText = textSegments.join('\n');
+    const jobInfo = extractJobInfo(combinedText);
+    const aiDetection = detectAIContent(combinedText);
+    return calculateRiskScore({ text: combinedText, jobInfo, aiDetection, source: evidence.source || 'Combined evidence' });
   }
 
-  return { scoreText, scoreUrl, recommendations, classify, checkMissingRequiredFields };
+  function recommendations(level, aiDetection) {
+    const base = [
+      'Verify the company independently through its official website, registration details, and a real careers page.',
+      'Look for a proper interview process, recruiter identity, and business email rather than personal inboxes or chats.',
+      'Never pay a fee, deposit, or advance payment before confirming the company and role are authentic.',
+      'Avoid sharing bank details, Aadhaar, PAN, passport, or OTPs unless the hiring process is clearly established and legitimate.',
+    ];
+
+    if (level === 'HIGH RISK' || level === 'MEDIUM RISK') {
+      base.unshift('Treat this as a warning sign, not proof of fraud — use it to prompt independent verification before you proceed.');
+    }
+
+    if (aiDetection && aiDetection.flaggedHigh) {
+      base.unshift('AI-content detection suggests the text may be templated or machine-generated. This can be a false positive, so check the company and hiring process independently.');
+    }
+
+    return base;
+  }
+
+  return { CONFIG, classify: classifyByScore, scoreText, scoreUrl, scoreCombined, recommendations, extractJobInfo, detectAIContent, calculateRiskScore };
 })();
 
 /* ---------------------------------- History store ---------------------------------- */

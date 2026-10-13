@@ -10,7 +10,6 @@
   let lastResult = null;
   let lastInputLabel = '';
 
-  // ---------------- Tab switching ----------------
   const tabs = document.querySelectorAll('.method-tab');
   const panels = document.querySelectorAll('.input-panel');
   tabs.forEach(tab => {
@@ -22,53 +21,39 @@
     });
   });
 
-  // ---------------- Text panel ----------------
   const textInput = document.getElementById('text-input');
   const charCount = document.getElementById('char-count');
   textInput.addEventListener('input', () => {
     charCount.textContent = `${textInput.value.length.toLocaleString()} / 10,000 characters`;
   });
 
-  document.getElementById('analyze-text-btn').addEventListener('click', () => {
+  document.getElementById('analyze-text-btn').addEventListener('click', async () => {
     const val = textInput.value.trim();
     const err = document.getElementById('text-error');
     if (!val) { err.classList.add('show'); return; }
     err.classList.remove('show');
     lastInputLabel = 'Pasted job text';
-    runFlow(() => JobShieldEngine.scoreText(val));
+    runFlow(async () => JobShieldEngine.scoreText(val));
   });
 
-  // ---------------- URL panel ----------------
   const urlInput = document.getElementById('url-input');
-  document.getElementById('analyze-url-btn').addEventListener('click', () => {
+  document.getElementById('analyze-url-btn').addEventListener('click', async () => {
     const val = urlInput.value.trim();
     const err = document.getElementById('url-error');
     const valid = /^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/.*)?$/i.test(val);
     if (!val || !valid) { err.classList.add('show'); return; }
     err.classList.remove('show');
     lastInputLabel = val;
-    runFlow(async () => {
-      const result = await JobShieldEngine.scoreUrl(val);
-      result.jobInfo = result.jobInfo || {};
-      result.jobInfo.source = val;
-      return result;
-    });
+    runFlow(async () => JobShieldEngine.scoreUrl(val));
   });
 
-  // ---------------- Image panel ----------------
   const dropzone = document.getElementById('dropzone');
   const imageInput = document.getElementById('image-input');
   const preview = document.getElementById('upload-preview');
   const previewImg = document.getElementById('upload-preview-img');
   const previewName = document.getElementById('upload-preview-name');
   const previewSize = document.getElementById('upload-preview-size');
-  const uploadStatus = document.getElementById('upload-status');
   let currentFile = null;
-
-  function setUploadStatus(message, tone = 'neutral') {
-    uploadStatus.textContent = message;
-    uploadStatus.className = `upload-status ${tone}`;
-  }
 
   dropzone.addEventListener('click', () => imageInput.click());
   dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
@@ -84,8 +69,8 @@
     const err = document.getElementById('image-error');
     err.classList.remove('show');
     const validType = /\.(jpe?g|png|webp)$/i.test(file.name);
-    if (!validType) { err.textContent = ''; err.innerHTML = `${Icons.alert(15)}Please upload JPG, PNG, JPEG or WEBP.`; err.classList.add('show'); setUploadStatus('Unsupported file type. Please upload JPG, JPEG, PNG, or WEBP.', 'error'); return; }
-    if (file.size > 10 * 1024 * 1024) { err.innerHTML = `${Icons.alert(15)}Image size exceeds the 10 MB limit.`; err.classList.add('show'); setUploadStatus('Image is too large. Please upload a screenshot under 10 MB.', 'error'); return; }
+    if (!validType) { err.textContent = ''; err.innerHTML = `${Icons.alert(15)}Please upload JPG, PNG, JPEG or WEBP.`; err.classList.add('show'); return; }
+    if (file.size > 10 * 1024 * 1024) { err.innerHTML = `${Icons.alert(15)}Image size exceeds the 10 MB limit.`; err.classList.add('show'); return; }
 
     currentFile = file;
     const reader = new FileReader();
@@ -95,7 +80,6 @@
     previewSize.textContent = `${(file.size / 1024).toFixed(0)} KB`;
     preview.classList.add('show');
     dropzone.style.display = 'none';
-    setUploadStatus('Image ready for OCR analysis.', 'success');
   }
 
   document.getElementById('upload-remove').addEventListener('click', () => {
@@ -103,65 +87,51 @@
     imageInput.value = '';
     preview.classList.remove('show');
     dropzone.style.display = '';
-    setUploadStatus('No image uploaded yet.', 'neutral');
   });
   document.getElementById('upload-replace').addEventListener('click', () => imageInput.click());
 
   async function extractImageText(file) {
-    if (!window.Tesseract || !window.Tesseract.recognize) {
-      throw new Error('Unable to extract readable text from this image. Please upload a clearer screenshot.');
+    const fallbackText = document.getElementById('image-ocr-fallback').value.trim();
+    if (fallbackText) return fallbackText;
+
+    if (typeof window === 'undefined' || !window.Tesseract) {
+      return '';
     }
 
-    const { data } = await window.Tesseract.recognize(file, 'eng', {
-      logger: () => {}
-    });
-
-    const extractedText = (data && data.text ? data.text : '').trim();
-    if (!extractedText) {
-      throw new Error('Unable to extract readable text from this image. Please upload a clearer screenshot.');
+    try {
+      const result = await window.Tesseract.recognize(file, 'eng', { logger: () => {} });
+      return (result && result.data && typeof result.data.text === 'string') ? result.data.text : '';
+    } catch (error) {
+      return '';
     }
-
-    if (extractedText.length < 30 || !/[A-Za-z]/.test(extractedText)) {
-      throw new Error('Not enough readable job information was found in this image.');
-    }
-
-    return extractedText;
   }
 
-  document.getElementById('analyze-image-btn').addEventListener('click', () => {
+  document.getElementById('analyze-image-btn').addEventListener('click', async () => {
     const err = document.getElementById('image-error');
     if (!currentFile) { err.innerHTML = `${Icons.alert(15)}Please upload a screenshot before analyzing.`; err.classList.add('show'); return; }
     err.classList.remove('show');
-    const fallbackText = document.getElementById('image-ocr-fallback').value.trim();
     lastInputLabel = currentFile.name;
-
     runFlow(async () => {
-      let extractedText = fallbackText;
-
-      try {
-        extractedText = await extractImageText(currentFile);
-        setUploadStatus('Image analyzed successfully.', 'success');
-      } catch (ocrError) {
-        if (!fallbackText) {
-          throw new Error(ocrError && ocrError.message ? ocrError.message : 'Unable to extract readable text from this image. Please upload a clearer screenshot.');
-        }
-        extractedText = fallbackText;
-        setUploadStatus('OCR failed; using the typed fallback text for analysis.', 'warning');
-      }
-
-      const result = JobShieldEngine.scoreText(extractedText);
-      result.jobInfo = result.jobInfo || {};
+      const extractedText = await extractImageText(currentFile);
+      const jobInfo = JobShieldEngine.extractJobInfo(extractedText);
+      const aiDetection = JobShieldEngine.detectAIContent(extractedText);
+      const result = JobShieldEngine.calculateRiskScore({
+        text: extractedText || 'No text could be extracted from the uploaded image. The image was analyzed only for visual clues and the job details remain incomplete.',
+        jobInfo,
+        aiDetection,
+        source: `Screenshot: ${currentFile.name}`,
+        warning: extractedText ? null : 'No OCR text could be extracted from the image. The risk score reflects missing information and should be treated as limited-evidence guidance.',
+      });
       result.jobInfo.source = `Screenshot: ${currentFile.name}`;
       return result;
     });
   });
 
-  // ---------------- Processing → Results flow ----------------
   const stepEls = document.querySelectorAll('.p-step');
   const ringFill = document.getElementById('ring-fill');
   const RING_CIRC = 264;
 
-  function runFlow(getResult) {
+  async function runFlow(getResult) {
     stageInput.style.display = 'none';
     stageResults.classList.remove('show');
     stageProcessing.classList.add('show');
@@ -181,25 +151,20 @@
         i++;
         setTimeout(tick, 480);
       } else {
-        setTimeout(() => {
-          Promise.resolve(getResult())
-            .then(result => {
-              lastResult = result;
-              showResults(lastResult);
-            })
-            .catch(error => {
-              const message = error && error.message ? error.message : 'We couldn\'t complete the analysis. Please try again.';
-              showResults({
-                score: 0,
-                level: 'ANALYSIS ERROR',
-                tone: 'error',
-                emoji: '⚠️',
-                factors: [],
-                error: message,
-                jobInfo: { title: null, company: null, location: null, salary: null, experience: null, source: lastInputLabel || 'Submission' },
-                analyzedAt: new Date().toISOString(),
-              });
+        setTimeout(async () => {
+          try {
+            lastResult = await Promise.resolve(getResult());
+            showResults(lastResult);
+          } catch (error) {
+            lastResult = JobShieldEngine.calculateRiskScore({
+              text: `Analysis failed: ${error && error.message ? error.message : 'Unknown error'}.`,
+              jobInfo: { ...JobShieldEngine.extractJobInfo(''), source: lastInputLabel },
+              aiDetection: { flagged: false, flaggedHigh: false, confidence: 0, label: 'Unavailable', reasons: ['The analysis could not complete.'] },
+              warning: 'The submission could not be fully analyzed. This is not proof of fraud, just limited evidence.',
             });
+            lastResult.jobInfo.source = lastInputLabel;
+            showResults(lastResult);
+          }
         }, 380);
       }
     };
@@ -213,102 +178,110 @@
     stageResults.classList.add('show');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 
-    if (result.error) {
-      document.getElementById('meter-score').innerHTML = `— <small>/100</small>`;
-      const badge = document.getElementById('meter-badge');
-      badge.className = 'risk-badge high';
-      badge.innerHTML = '<span class="dot"></span>ANALYSIS ERROR';
-      document.getElementById('results-summary-line').textContent = result.error;
-      document.getElementById('meter-summary').textContent = 'We couldn\'t complete the analysis. Please try again with a clearer screenshot or a more complete job description.';
-      const meterArc = document.getElementById('meter-arc');
-      const arcLen = 290;
-      meterArc.style.strokeDasharray = String(arcLen);
-      meterArc.style.strokeDashoffset = String(arcLen);
-      meterArc.setAttribute('stroke', 'var(--risk-high)');
-      const info = result.jobInfo || {};
-      document.getElementById('job-info-grid').innerHTML = `
-        <div class="job-info-item"><span>Job Title</span><strong>${fmt(info.title)}</strong></div>
-        <div class="job-info-item"><span>Company</span><strong>${fmt(info.company)}</strong></div>
-        <div class="job-info-item"><span>Location</span><strong>${fmt(info.location)}</strong></div>
-        <div class="job-info-item"><span>Salary</span><strong>${fmt(info.salary)}</strong></div>
-        <div class="job-info-item"><span>Experience</span><strong>${fmt(info.experience)}</strong></div>
-        <div class="job-info-item"><span>Source</span><strong>${fmt(info.source || lastInputLabel)}</strong></div>
-      `;
-      document.getElementById('factor-list').innerHTML = `<p style="color:var(--text-dim);font-size:14px;">${result.error}</p>`;
-      document.getElementById('explain-list').innerHTML = `<div class="explain-item"><span class="explain-num">!</span><div><h4>Analysis unavailable</h4><p>${result.error}</p></div></div>`;
-      document.getElementById('reco-list').innerHTML = `<div class="reco-item">${Icons.alert(16)}<span>Please upload a clearer screenshot or try another job description.</span></div>`;
-      return;
-    }
+    const factors = Array.isArray(result.factors) ? result.factors : [];
+    const ai = result.aiDetection || { flagged: false, flaggedHigh: false, confidence: 0, label: 'No strong AI signal', reasons: ['No strong AI-generation pattern detected.'] };
+    const missingWarnings = Array.isArray(result.missingInfoWarnings) ? result.missingInfoWarnings : [];
 
-    // Meter
     document.getElementById('meter-score').innerHTML = `${result.score} <small>/100</small>`;
     const badge = document.getElementById('meter-badge');
     badge.className = `risk-badge ${result.tone}`;
     badge.innerHTML = `<span class="dot"></span>${result.level} ${result.emoji}`;
-    document.getElementById('results-summary-line').textContent =
-      result.tone === 'high' || result.tone === 'elevated'
-        ? 'This job posting contains several indicators commonly associated with potentially fraudulent job offers.'
+
+    const summary = result.warning || (
+      result.tone === 'high'
+        ? 'This job posting contains several indicators often seen in potentially fraudulent offers.'
         : result.tone === 'medium'
-        ? 'This posting shows a small number of indicators worth double-checking before you proceed.'
-        : 'This posting shows few or no common scam indicators — still verify the employer independently.';
+        ? 'This posting shows some warning signs or missing information that should be verified before you proceed.'
+        : 'This posting shows few or no strong fraud indicators, though it is still wise to verify the employer independently.'
+    );
+    document.getElementById('results-summary-line').textContent = summary;
     document.getElementById('meter-summary').textContent =
-      result.factors.length
-        ? `${result.factors.length} indicator${result.factors.length > 1 ? 's' : ''} detected across payment, contact, and process signals.`
+      factors.length
+        ? `${factors.length} indicator${factors.length > 1 ? 's' : ''} detected, including fraud signals and missing-information warnings.`
         : 'No strong indicator patterns were detected in the submitted content.';
 
     const arcLen = 290;
     const meterArc = document.getElementById('meter-arc');
     meterArc.style.strokeDasharray = String(arcLen);
     meterArc.style.strokeDashoffset = String(arcLen - (arcLen * (result.score / 100)));
-    const riskColorVar = { low: 'var(--risk-low)', medium: 'var(--risk-medium)', elevated: 'var(--risk-elevated)', high: 'var(--risk-high)' }[result.tone];
+    const riskColorVar = { low: 'var(--risk-low)', medium: 'var(--risk-medium)', elevated: 'var(--risk-elevated)', high: 'var(--risk-high)' }[result.tone] || 'var(--risk-medium)';
     meterArc.setAttribute('stroke', riskColorVar);
 
-    // Job info
     const info = result.jobInfo || {};
     document.getElementById('job-info-grid').innerHTML = `
       <div class="job-info-item"><span>Job Title</span><strong>${fmt(info.title)}</strong></div>
       <div class="job-info-item"><span>Company</span><strong>${fmt(info.company)}</strong></div>
       <div class="job-info-item"><span>Location</span><strong>${fmt(info.location)}</strong></div>
       <div class="job-info-item"><span>Salary</span><strong>${fmt(info.salary)}</strong></div>
-      <div class="job-info-item"><span>Experience</span><strong>${fmt(info.experience)}</strong></div>
+      <div class="job-info-item"><span>Experience</span><strong>${fmt(info.experience || 'NOT AVAILABLE')}</strong></div>
       <div class="job-info-item"><span>Source</span><strong>${fmt(info.source || lastInputLabel)}</strong></div>
     `;
 
-    // Factor breakdown
+    const aiBlock = document.getElementById('ai-detection-card');
+    aiBlock.innerHTML = `
+      <div class="info-card-head">
+        <span class="info-card-label">AI Content Signal</span>
+        <span class="mini-badge ${ai.flaggedHigh ? 'danger' : ai.flagged ? 'warning' : 'safe'}">${ai.label}</span>
+      </div>
+      <p class="info-card-value">Confidence: ${ai.confidence || 0}%</p>
+      <ul class="mini-list">
+        ${ai.reasons.map(r => `<li>${r}</li>`).join('')}
+      </ul>
+      <p class="tiny-note">AI detection is only one indicator and can produce false positives. It does not prove a job is fraudulent.</p>
+    `;
+
+    const missingBlock = document.getElementById('missing-info-card');
+    if (missingWarnings.length) {
+      missingBlock.innerHTML = `
+        <div class="info-card-head">
+          <span class="info-card-label">Missing Information</span>
+          <span class="mini-badge warning">${missingWarnings.length} item${missingWarnings.length > 1 ? 's' : ''}</span>
+        </div>
+        <ul class="mini-list">
+          ${missingWarnings.map(w => `<li>${w.name}: ${w.text}</li>`).join('')}
+        </ul>
+      `;
+    } else {
+      missingBlock.innerHTML = `
+        <div class="info-card-head">
+          <span class="info-card-label">Missing Information</span>
+          <span class="mini-badge safe">No gaps</span>
+        </div>
+        <p class="tiny-note">The posting includes the main job details needed to assess the offer.</p>
+      `;
+    }
+
     const factorList = document.getElementById('factor-list');
-    if (!result.factors.length) {
+    if (!factors.length) {
       factorList.innerHTML = `<p style="color:var(--text-dim);font-size:14px;">No specific risk factors were flagged in this submission.</p>`;
     } else {
-      factorList.innerHTML = result.factors.map(f => {
-        const color = { medium: 'var(--risk-medium)', elevated: 'var(--risk-elevated)', high: 'var(--risk-high)' }[f.severity];
-        const dot = { medium: '🟡', elevated: '🟠', high: '🔴' }[f.severity];
+      factorList.innerHTML = factors.map(f => {
+        const color = { medium: 'var(--risk-medium)', elevated: 'var(--risk-elevated)', high: 'var(--risk-high)' }[f.severity] || 'var(--risk-medium)';
+        const text = f.severity === 'high' ? '🔴' : f.severity === 'elevated' ? '🟠' : '🟡';
         return `
         <div class="factor-row">
           <div class="factor-head">
-            <span class="factor-name">${dot} ${f.name}</span>
+            <span class="factor-name">${text} ${f.name}</span>
             <span class="risk-badge ${f.severity}"><span class="dot"></span>${f.severity.toUpperCase()} RISK</span>
           </div>
           <p class="factor-text">${f.text}</p>
-          <div class="factor-bar"><i style="width:${Math.min(100, f.weight * 3.2)}%;background:${color};"></i></div>
+          <div class="factor-bar"><i style="width:${Math.min(100, Number(f.weight) * 3.2)}%;background:${color};"></i></div>
         </div>`;
       }).join('');
     }
 
-    // Explanations
     const explainList = document.getElementById('explain-list');
-    explainList.innerHTML = result.factors.length
-      ? result.factors.map((f, idx) => `
+    explainList.innerHTML = factors.length
+      ? factors.map((f, idx) => `
         <div class="explain-item">
           <span class="explain-num">${idx + 1}</span>
-          <div><h4>${f.name} detected</h4><p>${f.text}</p></div>
+          <div><h4>${f.name}</h4><p>${f.text}</p></div>
         </div>`).join('')
-      : `<div class="explain-item"><span class="explain-num">✓</span><div><h4>No major indicators found</h4><p>The submitted content didn't match common scam-language or process patterns JobShield checks for. This is not a guarantee the offer is legitimate.</p></div></div>`;
+      : `<div class="explain-item"><span class="explain-num">✓</span><div><h4>No major indicators found</h4><p>The submitted content did not match common scam-language or process patterns JobShield checks for. This is not a guarantee the offer is genuine.</p></div></div>`;
 
-    // Recommendations
-    document.getElementById('reco-list').innerHTML = JobShieldEngine.recommendations(result.tone)
+    document.getElementById('reco-list').innerHTML = JobShieldEngine.recommendations(result.level, ai)
       .map(r => `<div class="reco-item">${Icons.check(16)}<span>${r}</span></div>`).join('');
 
-    // Save to history
     JobShieldHistory.save({
       jobTitle: info.title || lastInputLabel || 'Untitled submission',
       company: info.company || null,
@@ -319,7 +292,6 @@
     });
   }
 
-  // ---------------- Result actions ----------------
   document.getElementById('new-analysis-btn').addEventListener('click', resetToInput);
   document.getElementById('start-new-btn').addEventListener('click', e => { e.preventDefault(); resetToInput(); });
 
@@ -331,7 +303,6 @@
     document.getElementById('image-ocr-fallback').value = '';
     currentFile = null; imageInput.value = '';
     preview.classList.remove('show'); dropzone.style.display = '';
-    setUploadStatus('No image uploaded yet.', 'neutral');
     document.querySelectorAll('.field-error').forEach(e => e.classList.remove('show'));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -354,8 +325,17 @@
       `Company: ${info.company || 'Not available'}`,
       `Location: ${info.location || 'Not available'}`,
       `Salary: ${info.salary || 'Not available'}`,
-      `Experience: ${info.experience || 'Not available'}`,
+      `Experience: ${info.experience || 'NOT AVAILABLE'}`,
       `Source: ${info.source || lastInputLabel || 'Not available'}`,
+      '',
+      'AI CONTENT SIGNAL',
+      '-----------------',
+      `${r.aiDetection ? r.aiDetection.label : 'No AI signal'} — confidence: ${r.aiDetection ? r.aiDetection.confidence : 0}%`,
+      ...(r.aiDetection ? r.aiDetection.reasons.map(x => `- ${x}`) : []),
+      '',
+      'MISSING INFORMATION',
+      '-------------------',
+      ...(r.missingInfoWarnings && r.missingInfoWarnings.length ? r.missingInfoWarnings.map(x => `- ${x.name}: ${x.text}`) : ['- None identified.']),
       '',
       'DETECTED RISK FACTORS',
       '----------------------',
@@ -363,12 +343,12 @@
       '',
       'RECOMMENDATIONS',
       '----------------',
-      ...JobShieldEngine.recommendations(r.tone).map(x => `- ${x}`),
+      ...JobShieldEngine.recommendations(r.level, r.aiDetection).map(x => `- ${x}`),
       '',
       'DISCLAIMER',
       '----------',
       'This is an automated, indicator-based risk assessment, not a definitive determination.',
-      'Always verify employers independently before sharing information or money.',
+      'AI detection is only one signal and can produce false positives. Always verify employers independently before sharing information or money.',
     ];
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
     const a = document.createElement('a');

@@ -21,8 +21,10 @@
     <div class="nav-right">
       <a href="history.html" class="btn btn-secondary">History</a>
       <a href="analyze.html" class="btn btn-primary">Analyze Job</a>
-      <a href="auth.html?mode=login" class="btn btn-secondary">Login</a>
-      <a href="auth.html?mode=signup" class="btn btn-primary">Sign Up</a>
+      <a href="auth.html?mode=login" class="btn btn-secondary" data-auth-signed-out>Login</a>
+      <a href="auth.html?mode=signup" class="btn btn-primary" data-auth-signed-out>Sign Up</a>
+      <span class="auth-user-label" data-auth-signed-in hidden data-auth-user-email></span>
+      <button class="btn btn-secondary" type="button" data-auth-signed-in data-auth-logout hidden>Logout</button>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false"></button>
     </div>
   </div>
@@ -36,8 +38,12 @@
   <a href="history.html">My History</a>
   <a href="analyze.html" class="btn btn-primary btn-block">Analyze a Job →</a>
   <div class="mobile-auth-actions">
-    <a href="auth.html?mode=login" class="btn btn-secondary">Login</a>
-    <a href="auth.html?mode=signup" class="btn btn-primary">Sign Up</a>
+    <a href="auth.html?mode=login" class="btn btn-secondary" data-auth-signed-out>Login</a>
+    <a href="auth.html?mode=signup" class="btn btn-primary" data-auth-signed-out>Sign Up</a>
+    <div class="mobile-auth-account" data-auth-signed-in hidden>
+      <span data-auth-user-email></span>
+      <button class="btn btn-secondary" type="button" data-auth-logout>Logout</button>
+    </div>
   </div>
 </div>
 
@@ -107,6 +113,7 @@
 </footer>
 
 <script src="js/ui.js"></script>
+<script type="module" src="js/auth-nav.js"></script>
 <script>
   document.querySelectorAll('.check-item input').forEach(cb => {
     cb.addEventListener('change', () => cb.nextElementSibling.classList.toggle('done', cb.checked));

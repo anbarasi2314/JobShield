@@ -19,8 +19,10 @@
       <a href="safety-tips.html">Safety Tips</a>
     </nav>
     <div class="nav-right">
-      <a href="auth.html?mode=login" class="btn btn-secondary">Login</a>
-      <a href="auth.html?mode=signup" class="btn btn-primary">Sign Up</a>
+      <a href="auth.html?mode=login" class="btn btn-secondary" data-auth-signed-out>Login</a>
+      <a href="auth.html?mode=signup" class="btn btn-primary" data-auth-signed-out>Sign Up</a>
+      <span class="auth-user-label" data-auth-signed-in hidden data-auth-user-email></span>
+      <button class="btn btn-secondary" type="button" data-auth-signed-in data-auth-logout hidden>Logout</button>
       <button class="nav-toggle" aria-label="Open menu" aria-expanded="false"></button>
     </div>
   </div>
@@ -32,8 +34,12 @@
   <a href="about.html">About</a>
   <a href="safety-tips.html">Safety Tips</a>
   <div class="mobile-auth-actions">
-    <a href="auth.html?mode=login" class="btn btn-secondary">Login</a>
-    <a href="auth.html?mode=signup" class="btn btn-primary">Sign Up</a>
+    <a href="auth.html?mode=login" class="btn btn-secondary" data-auth-signed-out>Login</a>
+    <a href="auth.html?mode=signup" class="btn btn-primary" data-auth-signed-out>Sign Up</a>
+    <div class="mobile-auth-account" data-auth-signed-in hidden>
+      <span data-auth-user-email></span>
+      <button class="btn btn-secondary" type="button" data-auth-logout>Logout</button>
+    </div>
   </div>
 </div>
 
@@ -84,5 +90,6 @@
 </footer>
 
 <script src="js/ui.js"></script>
+<script type="module" src="js/auth-nav.js"></script>
 </body>
 </html>

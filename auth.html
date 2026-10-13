@@ -52,7 +52,7 @@
     <p id="auth-intro" class="auth-intro">Access your JobShield account.</p>
     <div class="firebase-setup-note" id="firebase-setup-notice" role="status" hidden>
       <strong>Firebase setup required</strong>
-      <span>Enter your Firebase web app configuration in <strong>js/firebase.js</strong>, enable Email/Password sign-in in Firebase Authentication, and authorize this site's domain. Authentication is disabled until that setup is complete.</span>
+      <span id="firebase-setup-message">Add your Firebase Web app configuration to js/firebase.js, enable Email/Password in Firebase Authentication, and authorize this site's domain.</span>
     </div>
     <form id="auth-form" novalidate>
       <div class="auth-field" id="name-field" hidden>
@@ -83,7 +83,7 @@
   </section>
 </main>
 <footer class="site-footer">
-  <div class="container footer-bottom"><span>© 2026 JobShield</span><span>Firebase Authentication integration — configure before use.</span></div>
+  <div class="container footer-bottom"><span>© 2026 JobShield</span><span>JobShield account access</span></div>
 </footer>
 <script src="js/ui.js"></script>
 <script type="module" src="js/auth-nav.js"></script>

@@ -1,4 +1,4 @@
-import { auth, isFirebaseConfigured, persistenceReady } from './firebase.js';
+import { auth, firebaseConfigError, isFirebaseConfigured, persistenceReady } from './firebase.js';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -16,6 +16,7 @@ import {
   const status = document.getElementById('auth-status');
   const submitButton = document.getElementById('auth-submit');
   const setupNotice = document.getElementById('firebase-setup-notice');
+  const setupMessage = document.getElementById('firebase-setup-message');
   const errors = {
     name: document.getElementById('name-error'),
     email: document.getElementById('email-error'),
@@ -41,8 +42,9 @@ import {
 
   if (!isFirebaseConfigured || !auth) {
     setupNotice.hidden = false;
+    setupMessage.textContent = firebaseConfigError || 'Firebase could not initialize. Verify the Web app configuration in js/firebase.js.';
     submitButton.disabled = true;
-    status.textContent = 'Firebase is not configured. Add your Firebase web app config in js/firebase.js to enable account access.';
+    status.textContent = 'Account actions are disabled until Firebase setup is complete.';
     status.classList.add('is-error');
   }
 
@@ -78,7 +80,7 @@ import {
   }
 
   function setLoading(isLoading) {
-    submitButton.disabled = isLoading || !isFirebaseConfigured;
+    submitButton.disabled = isLoading || !isFirebaseConfigured || !auth;
     submitButton.innerHTML = isLoading
       ? '<span class="auth-spinner" aria-hidden="true"></span>Working…'
       : (signupMode ? 'Create account' : 'Login');
@@ -128,7 +130,8 @@ import {
 
     if (!isFirebaseConfigured || !auth) {
       setupNotice.hidden = false;
-      status.textContent = 'Firebase is not configured. Follow the setup steps in js/firebase.js to enable authentication.';
+      setupMessage.textContent = firebaseConfigError || 'Firebase could not initialize. Verify the Web app configuration in js/firebase.js.';
+      status.textContent = 'Account actions are disabled until Firebase setup is complete.';
       status.classList.add('is-error');
       return;
     }
